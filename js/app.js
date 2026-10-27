@@ -1,5 +1,5 @@
 import { CITIES, PROVIDERS, TIER_META } from "./config.js";
-import { loadState, saveState, clearState, takePendingJDs, HAS_CHROME, DEFAULT_STATE } from "./store.js";
+import { loadState, saveState, clearState, takePendingJDs, HAS_CHROME, DEFAULT_STATE, loadHistory, addHistoryRecord, updateHistoryRecord, deleteHistoryRecord, clearHistory } from "./store.js";
 import { parseFile, ACCEPT, MAX_IMAGES } from "./parse.js";
 import { chat, testConnection } from "./llm.js";
 import { buildAnalysisMessages, buildCalibrationMessages, buildChatMessages, collectImages } from "./prompt.js";
@@ -18,9 +18,15 @@ let editingJD = null;
 let activeAbort = null;
 let chatBusy = false;
 let openPos = new Set();
+let viewingRecord = null;   // 正在查看的历史记录对象（null 表示查看当前实时会话）
+let historyCache = [];      // 历史记录列表缓存
+let historyOpen = false;
+let liveChatBackup = null;  // 进入历史查看前，暂存当前会话的追问记录
+
+const scoreColor = (v) => (v >= 80 ? "#0f9d76" : v >= 65 ? "#4f46e5" : v >= 50 ? "#c2740a" : "#d92d20");
 
 /* ---------------- 初始化 ---------------- */
-function init() {
+async function init() {
   if (!state.company) state.company = structuredClone(DEFAULT_STATE.company);
   if (!state.qa) state.qa = { questions: [], answers: {}, generatedAt: 0 };
   if (!Array.isArray(state.cities)) state.cities = [];
@@ -39,6 +45,10 @@ function init() {
   const params = new URLSearchParams(location.search);
   if (params.get("view") === "result" && state.analysis) showResult();
   setupScrollSpy();
+
+  historyCache = await loadHistory();
+  updateHistoryBadge();
+  document.addEventListener("jme:history-updated", updateHistoryBadge);
 }
 
 function renderAll() {
@@ -524,12 +534,29 @@ async function startAnalysis() {
     const analysis = normalizeAnalysis(raw);
     state.analysis = analysis;
     state.chat = [];
+    viewingRecord = null;
     await saveState(state);
+    const record = {
+      id: uid("rec"),
+      company: state.company.name || analysis.company || "未命名公司",
+      createdAt: analysis.createdAt || Date.now(),
+      analysis,
+      chat: [],
+      context: {
+        cities: [...(state.cities || [])],
+        limit: Number(state.company.limit) || 0,
+        model: state.settings.model || "",
+        resumeName: state.resume?.fileName || (state.resume?.images?.length ? "图片简历" : ""),
+        jds: (state.jds || []).map((j) => ({ title: j.title, dept: j.dept, city: j.city }))
+      }
+    };
+    historyCache = await addHistoryRecord(record);
+    updateHistoryBadge();
     hideProgress();
     openPos = new Set(analysis.positions.slice(0, 1).map((p) => p.id));
     showResult();
     const secs = ((Date.now() - started) / 1000).toFixed(0);
-    toast(`分析完成，用时 ${secs}s${usage?.total_tokens ? ` · ${usage.total_tokens} tokens` : ""}`, "ok", 3600);
+    toast(`分析完成，用时 ${secs}s${usage?.total_tokens ? ` · ${usage.total_tokens} tokens` : ""} · 已存入历史`, "ok", 3600);
   } catch (e) {
     hideProgress();
     if (/aborted|取消/i.test(e.message || "")) toast("已取消分析");
@@ -608,18 +635,25 @@ function showRawFallback(text) {
 
 /* ---------------- 结果视图 ---------------- */
 function showResult() {
-  if (!state.analysis) return;
-  if (!openPos.size && state.analysis.positions?.length) openPos = new Set([state.analysis.positions[0].id]);
+  const a = viewingRecord ? viewingRecord.analysis : state.analysis;
+  const ctx = viewingRecord ? viewingRecord.context : null;
+  if (!a) return;
+  if (!openPos.size && a.positions?.length) openPos = new Set([a.positions[0].id]);
   $("#viewSetup").hidden = true;
   $("#viewResult").hidden = false;
   $("#actionBar").style.display = "none";
-  renderResult(state, openPos);
+  renderResult(state, openPos, a, ctx);
   window.scrollTo({ top: 0, behavior: "instant" });
   const box = $("#chatBox");
   if (box) box.scrollTop = box.scrollHeight;
 }
 
 function backToSetup() {
+  if (viewingRecord) {
+    state.chat = liveChatBackup || [];
+    liveChatBackup = null;
+    viewingRecord = null;
+  }
   $("#viewResult").hidden = true;
   $("#viewSetup").hidden = false;
   $("#actionBar").style.display = "";
@@ -671,11 +705,13 @@ async function sendChat(preset) {
     holder.remove();
     state.chat.push({ role: "assistant", content: text.trim(), ts: Date.now() });
     await saveState(state);
+    if (viewingRecord) await updateHistoryRecord(viewingRecord.id, { chat: state.chat });
     appendChatMessage({ role: "assistant", content: text.trim() });
   } catch (e) {
     holder.remove();
     appendChatMessage({ role: "assistant", content: `请求失败：${e.message || e}` });
     state.chat.push({ role: "assistant", content: `请求失败：${e.message || e}`, ts: Date.now() });
+    if (viewingRecord) await updateHistoryRecord(viewingRecord.id, { chat: state.chat });
   } finally {
     chatBusy = false;
     if (btn) btn.disabled = false;
@@ -881,13 +917,18 @@ const ACTIONS = {
   backToSetup: () => backToSetup(),
   viewLast: () => showResult(),
   exportMd: () => {
-    const md = buildMarkdown(state);
+    const a = viewingRecord ? viewingRecord.analysis : state.analysis;
+    const ctx = viewingRecord ? viewingRecord.context : null;
+    const md = buildMarkdown(state, a, ctx);
     if (!md) return toast("没有可导出的结果", "warn");
-    downloadText(`${state.company.name || "岗位"}-对比分析.md`, md);
+    const name = (viewingRecord ? viewingRecord.company : state.company.name) || "岗位";
+    downloadText(`${name}-对比分析.md`, md);
     toast("已导出 Markdown", "ok");
   },
   copySummary: async () => {
-    const t = buildPlainSummary(state);
+    const a = viewingRecord ? viewingRecord.analysis : state.analysis;
+    const ctx = viewingRecord ? viewingRecord.context : null;
+    const t = buildPlainSummary(state, a, ctx);
     if (!t) return toast("没有可复制的内容", "warn");
     await copyText(t);
     toast("结论已复制", "ok");
@@ -907,6 +948,16 @@ const ACTIONS = {
   showHelp: () => showHelp(),
   openModelSettings: () => goStep(4),
   gotoStep: (el) => goStep(Number(el.dataset.step)),
+  openHistory: () => openHistory(),
+  closeHistory: () => closeHistory(),
+  toggleHistGroup: (el) => {
+    const g = el.closest(".hist-group");
+    if (g) g.classList.toggle("open");
+  },
+  viewRecord: (el) => viewRecord(el.dataset.id),
+  delRecord: (el) => deleteRecord(el.dataset.id),
+  clearHistory: () => clearAllHistory(),
+  closeHistoryView: () => closeHistoryView(),
   resetAll: async () => {
     if (!(await confirmModal("清空所有数据？", "简历、岗位、情报、分析与对话都会从本机删除，且无法恢复。", "全部清空"))) return;
     await clearState();
@@ -991,6 +1042,8 @@ function showHelp() {
     </ul>
     <h4>关于数据</h4>
     <p>简历、岗位、Key 都只存在浏览器本机（chrome.storage.local）。点"开始分析"时，材料会发送到你选择的模型服务商，请自行确认其数据政策。模型没有依据的信息会标"未知/估算"，薪资只给区间——不要把它当官方数据。</p>
+    <h4>历史记录</h4>
+    <p>每完成一次分析，结果会自动按公司归类存进「历史」（顶栏按钮）。刷新、切换公司或关掉标签页都不会丢；历史里可以按公司展开、查看具体岗位与分数，也能继续追问或导出。历史仅存本机，可单条删除或一键清空。</p>
     <h4>常见问题</h4>
     <ul>
       <li>接口报 401/403：Key 错了或额度用尽。</li>
@@ -1004,6 +1057,140 @@ function showHelp() {
   $("#modalRoot").querySelector(".modal-mask").addEventListener("click", (e) => {
     if (e.target.classList.contains("modal-mask")) $("#modalRoot").innerHTML = "";
   });
+}
+
+/* ---------------- 历史记录 ---------------- */
+function updateHistoryBadge() {
+  const b = $("#historyBadge");
+  if (!b) return;
+  const n = historyCache.length;
+  b.textContent = n ? String(n) : "";
+  b.hidden = n === 0;
+}
+
+function openHistory() {
+  historyOpen = true;
+  renderHistory();
+  const d = $("#historyDrawer");
+  d.hidden = false;
+  requestAnimationFrame(() => d.classList.add("open"));
+}
+
+function closeHistory() {
+  historyOpen = false;
+  const d = $("#historyDrawer");
+  d.classList.remove("open");
+  setTimeout(() => { if (!historyOpen) d.hidden = true; }, 220);
+}
+
+function groupByCompany(list) {
+  const map = new Map();
+  for (const r of list) {
+    const key = (r.company || "未命名公司").trim() || "未命名公司";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  }
+  return [...map.entries()];
+}
+
+function histRow(r) {
+  const a = r.analysis || {};
+  const positions = a.positions || [];
+  const top = positions.length ? Math.max(...positions.map((p) => clamp(p.overall))) : 0;
+  const jobInfo = positions
+    .map((p) => `${esc(p.title)} <b style="color:${scoreColor(p.overall)}">${clamp(p.overall)}</b>`)
+    .join("、");
+  const jobCount = positions.length ? `${positions.length} 个岗位` : "（无岗位）";
+  return `<div class="hist-item" data-record="${r.id}">
+    <div class="hist-item-main" data-action="viewRecord" data-id="${r.id}">
+      <div class="hist-item-top">
+        <span class="hist-item-time">${fmtTime(r.createdAt)}</span>
+        <span class="hist-item-meta">${jobCount} · 最高 ${top} 分 · ${esc(r.context?.model || "")}</span>
+      </div>
+      <div class="hist-item-jobs">${jobInfo || "（无岗位）"}</div>
+    </div>
+    <button class="icon-btn danger" data-action="delRecord" data-id="${r.id}" title="删除这条">×</button>
+  </div>`;
+}
+
+function renderHistory() {
+  const root = $("#historyList");
+  if (!root) return;
+  const groups = groupByCompany(historyCache);
+  $("#historyCount").textContent = String(historyCache.length);
+  if (!groups.length) {
+    root.innerHTML = `<div class="hist-empty">还没有历史记录。每完成一次分析，结果会自动按公司归类保存在这里，刷新或切换公司都不会丢。</div>`;
+    return;
+  }
+  root.innerHTML = groups
+    .map(([company, recs]) => {
+      const open = recs.some((r) => viewingRecord && r.id === viewingRecord.id);
+      return `<div class="hist-group ${open ? "open" : ""}">
+        <div class="hist-group-head" data-action="toggleHistGroup" data-company="${esc(company)}">
+          <svg class="caret" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <b>${esc(company)}</b>
+          <span class="hist-group-count">${recs.length} 次</span>
+        </div>
+        <div class="hist-group-body">${recs.map(histRow).join("")}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+function viewRecord(id) {
+  const rec = historyCache.find((r) => r.id === id);
+  if (!rec) return toast("记录不存在", "warn");
+  viewingRecord = rec;
+  liveChatBackup = state.chat;
+  state.chat = rec.chat || [];
+  openPos = new Set((rec.analysis.positions || []).slice(0, 1).map((p) => p.id));
+  closeHistory();
+  showResult();
+  toast(`正在查看「${rec.company}」的历史分析`, "info", 2000);
+}
+
+function closeHistoryView() {
+  if (!viewingRecord) return;
+  viewingRecord = null;
+  state.chat = liveChatBackup || [];
+  liveChatBackup = null;
+  if (state.analysis) showResult();
+  else backToSetup();
+}
+
+async function deleteRecord(id) {
+  if (!(await confirmModal("删除这条历史？", "该次分析结果会从本机移除，无法恢复。", "删除"))) return;
+  const wasViewing = viewingRecord && viewingRecord.id === id;
+  historyCache = await deleteHistoryRecord(id);
+  updateHistoryBadge();
+  if (historyOpen) renderHistory();
+  if (wasViewing) {
+    viewingRecord = null;
+    liveChatBackup = null;
+    state.chat = [];
+    $("#viewResult").hidden = true;
+    $("#viewSetup").hidden = false;
+    $("#actionBar").style.display = "";
+    renderMiniStats(state);
+    updateActionBar();
+  }
+  toast("已删除", "ok");
+}
+
+async function clearAllHistory() {
+  if (!(await confirmModal("清空全部历史？", "所有历史分析记录都会从本机删除，无法恢复。", "全部清空"))) return;
+  historyCache = await clearHistory();
+  updateHistoryBadge();
+  if (historyOpen) renderHistory();
+  if (viewingRecord) {
+    viewingRecord = null;
+    liveChatBackup = null;
+    state.chat = [];
+    $("#viewResult").hidden = true;
+    $("#viewSetup").hidden = false;
+    $("#actionBar").style.display = "";
+  }
+  toast("历史已清空", "ok");
 }
 
 /* ---------------- 右键菜单来的 JD ---------------- */

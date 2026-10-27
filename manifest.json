@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "投递参谋 · 秋招岗位匹配对比",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "上传简历、录入多个岗位 JD，接入你自己的大模型，对比同公司同方向岗位并给出投递组合建议。",
   "permissions": [
     "storage",

@@ -84,4 +84,70 @@ export async function takePendingJDs() {
   return list;
 }
 
+/* ---------------- 历史记录 ---------------- */
+const KEY_HISTORY = "jme_history_v1";
+const MAX_HISTORY = 100;
+
+async function readHistory() {
+  try {
+    let raw;
+    if (HAS_CHROME) {
+      const got = await chrome.storage.local.get(KEY_HISTORY);
+      raw = got?.[KEY_HISTORY];
+    } else {
+      raw = localStorage.getItem(KEY_HISTORY);
+      raw = raw ? JSON.parse(raw) : null;
+    }
+    const list = Array.isArray(raw) ? raw : [];
+    return list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch (e) {
+    console.warn("[jme] load history failed", e);
+    return [];
+  }
+}
+
+async function writeHistory(list) {
+  const payload = { [KEY_HISTORY]: list };
+  try {
+    if (HAS_CHROME) await chrome.storage.local.set(payload);
+    else localStorage.setItem(KEY_HISTORY, JSON.stringify(list));
+    document.dispatchEvent(new CustomEvent("jme:history-updated"));
+  } catch (e) {
+    console.warn("[jme] history save failed", e);
+  }
+}
+
+export async function loadHistory() {
+  return readHistory();
+}
+
+export async function addHistoryRecord(record) {
+  const list = await readHistory();
+  list.unshift(record);
+  while (list.length > MAX_HISTORY) list.pop();
+  await writeHistory(list);
+  return list;
+}
+
+export async function updateHistoryRecord(id, patch) {
+  const list = await readHistory();
+  const idx = list.findIndex((r) => r.id === id);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...patch };
+    await writeHistory(list);
+  }
+  return list;
+}
+
+export async function deleteHistoryRecord(id) {
+  const list = (await readHistory()).filter((r) => r.id !== id);
+  await writeHistory(list);
+  return list;
+}
+
+export async function clearHistory() {
+  await writeHistory([]);
+  return [];
+}
+
 export { HAS_CHROME };

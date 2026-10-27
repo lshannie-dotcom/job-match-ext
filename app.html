@@ -23,6 +23,7 @@
         </div>
         <div class="top-actions">
           <span class="save-state" id="saveState">已自动保存到本机</span>
+          <button class="btn ghost sm" data-action="openHistory">历史 <span class="hist-badge" id="historyBadge" hidden></span></button>
           <button class="btn ghost sm" data-action="showHelp">使用说明</button>
           <button class="btn ghost sm" data-action="openModelSettings">模型设置</button>
         </div>
@@ -331,6 +332,22 @@
 
     <div id="toast" class="toast-wrap"></div>
     <div id="modalRoot"></div>
+
+    <div id="historyDrawer" class="drawer" hidden>
+      <div class="drawer-mask" data-action="closeHistory"></div>
+      <aside class="drawer-panel">
+        <div class="drawer-head">
+          <h3>历史记录 <span id="historyCount" class="cnt">0</span></h3>
+          <div class="drawer-head-actions">
+            <button class="btn ghost sm" data-action="clearHistory">清空</button>
+            <button class="icon-btn" data-action="closeHistory" title="关闭">×</button>
+          </div>
+        </div>
+        <div class="drawer-body" id="historyList"></div>
+        <div class="drawer-foot">按公司归类 · 仅存本机，不会上传任何服务器</div>
+      </aside>
+    </div>
+
     <div id="progressOverlay" class="progress-overlay" hidden>
       <div class="progress-card">
         <div class="spinner"></div>

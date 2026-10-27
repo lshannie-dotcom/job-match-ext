@@ -249,8 +249,8 @@ function posBody(p) {
   </div>`;
 }
 
-export function renderResult(state, openIds = null) {
-  const a = state.analysis;
+export function renderResult(state, openIds = null, analysis = null, ctx = null) {
+  const a = analysis || state.analysis;
   const root = document.getElementById("resultRoot");
   if (!a) {
     root.innerHTML = `<div class="panel"><p>还没有分析结果。</p></div>`;
@@ -259,8 +259,10 @@ export function renderResult(state, openIds = null) {
   const positions = a.positions || [];
   const picked = new Set(a.applyPlan?.picks || []);
   const openSet = openIds || new Set(positions.length ? [positions[0].id] : []);
-  const cityText = (state.cities || []).join("、") || "未填写";
-  const modelName = state.settings?.model || "";
+  const cities = (ctx?.cities && ctx.cities.length ? ctx.cities : state.cities) || [];
+  const cityText = cities.join("、") || "未填写";
+  const modelName = ctx?.model || state.settings?.model || "";
+  const limitVal = ctx?.limit ?? state.company?.limit;
 
   const posCards = positions
     .map((p, i) => {
@@ -294,6 +296,7 @@ export function renderResult(state, openIds = null) {
     })
     .join("");
 
+  const isHistory = !!ctx;
   const cmpRows = [
     ["综合分", (p) => `<b class="${p.overall === Math.max(...positions.map((x) => x.overall)) ? "best" : ""}">${clamp(p.overall)}</b>`],
     ["人岗匹配", (p) => clamp(p.score)],
@@ -339,15 +342,17 @@ export function renderResult(state, openIds = null) {
     <div class="result-head">
       <div class="result-title">
         <h1>${esc(a.company || state.company?.name || "岗位对比")} · ${positions.length} 个岗位</h1>
-        <p>意向城市 ${esc(cityText)} · 投递上限 ${esc(String(plan.limit || state.company?.limit || "—"))} 个 · ${fmtTime(a.createdAt || Date.now())} · ${esc(modelName)}</p>
+        <p>意向城市 ${esc(cityText)} · 投递上限 ${esc(String(plan.limit || limitVal || "—"))} 个 · ${fmtTime(a.createdAt || Date.now())} · ${esc(modelName)}</p>
       </div>
       <div class="result-actions">
         <button class="btn ghost sm" data-action="backToSetup">返回修改</button>
         <button class="btn ghost sm" data-action="copySummary">复制结论</button>
         <button class="btn ghost sm" data-action="exportMd">导出 Markdown</button>
-        <button class="btn primary sm" data-action="startAnalysis">重新分析</button>
+        ${isHistory ? `<button class="btn ghost sm" data-action="closeHistoryView">回到当前分析</button>` : `<button class="btn primary sm" data-action="startAnalysis">重新分析</button>`}
       </div>
     </div>
+
+    ${isHistory ? `<div class="history-banner"><svg viewBox="0 0 16 16" width="14" height="14" fill="none"><circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.3"/><path d="M8 4.6V8l2.3 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>这是历史记录（只读）。如需基于最新材料重新分析，点「回到当前分析」回到本机最新的会话。</div>` : ""}
 
     <div class="overview-grid">
       <div class="panel">
@@ -368,7 +373,7 @@ export function renderResult(state, openIds = null) {
         </div>
       </div>
       <div class="panel">
-        <div class="panel-title">投递组合建议（上限 ${esc(String(plan.limit || state.company?.limit || "—"))}）</div>
+        <div class="panel-title">投递组合建议（上限 ${esc(String(plan.limit || limitVal || "—"))}）</div>
         <div class="plan-picks">${portfolio || `<span class="qa-empty">未给出</span>`}</div>
         <p>${esc(plan.rationale || "")}</p>
       </div>
@@ -432,15 +437,18 @@ export function appendChatMessage(msg) {
   box.scrollTop = box.scrollHeight;
 }
 
-export function buildMarkdown(state) {
-  const a = state.analysis;
+export function buildMarkdown(state, analysis = null, ctx = null) {
+  const a = analysis || state.analysis;
   if (!a) return "";
+  const cities = (ctx?.cities && ctx.cities.length ? ctx.cities : state.cities) || [];
+  const limitVal = ctx?.limit ?? state.company?.limit;
+  const modelName = ctx?.model || state.settings?.model || "";
   const L = [];
   L.push(`# ${a.company || state.company?.name || ""} · 岗位对比与投递建议`, "");
-  L.push(`- 意向城市：${(state.cities || []).join("、") || "未填写"}`);
-  L.push(`- 投递上限：${a.applyPlan?.limit || state.company?.limit || "—"} 个`);
+  L.push(`- 意向城市：${cities.join("、") || "未填写"}`);
+  L.push(`- 投递上限：${a.applyPlan?.limit || limitVal || "—"} 个`);
   L.push(`- 生成时间：${fmtTime(a.createdAt || Date.now())}`);
-  L.push(`- 使用模型：${state.settings?.model || ""}`, "");
+  L.push(`- 使用模型：${modelName}`, "");
   if (a.candidate?.headline) {
     L.push("## 候选人画像", "", `**定位**：${a.candidate.headline}`, "");
     if (a.candidate.strengths?.length) L.push("**优势**", ...a.candidate.strengths.map((x) => `- ${x}`), "");
@@ -495,12 +503,13 @@ export function buildMarkdown(state) {
   return L.join("\n");
 }
 
-export function buildPlainSummary(state) {
-  const a = state.analysis;
+export function buildPlainSummary(state, analysis = null, ctx = null) {
+  const a = analysis || state.analysis;
   if (!a) return "";
+  const cities = (ctx?.cities && ctx.cities.length ? ctx.cities : state.cities) || [];
   const name = (id) => a.positions?.find((p) => p.id === id)?.title || id;
   const lines = [
-    `${a.company || ""}｜投递上限 ${a.applyPlan?.limit || ""} 个｜意向城市 ${(state.cities || []).join("、")}`,
+    `${a.company || ""}｜投递上限 ${a.applyPlan?.limit || ""} 个｜意向城市 ${cities.join("、")}`,
     `建议投递：${(a.applyPlan?.picks || []).map(name).join("、") || "—"}`,
     ...(a.positions || []).map((p) => `${p.title}：综合${p.overall}（匹配${p.score}/质量${p.quality}，${p.tier}，难度${p.difficulty}）`),
     a.applyPlan?.rationale ? `理由：${a.applyPlan.rationale}` : ""
