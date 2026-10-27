@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>投递参谋 · 秋招岗位匹配对比</title>
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="none">
+              <path d="M6 20.5V9.5C6 8.4 6.9 7.5 8 7.5h5.4c.5 0 1 .2 1.4.6l2.6 2.6c.4.4.9.6 1.4.6H21c1.1 0 2 .9 2 2v7.2c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2Z" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M10 15h8M10 18.2h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <strong>投递参谋</strong>
+            <span>秋招 · 同公司岗位对比</span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="save-state" id="saveState">已自动保存到本机</span>
+          <button class="btn ghost sm" data-action="showHelp">使用说明</button>
+          <button class="btn ghost sm" data-action="openModelSettings">模型设置</button>
+        </div>
+      </header>
+
+      <div class="layout">
+        <aside class="rail">
+          <nav class="steps" id="steps">
+            <a class="step" data-action="gotoStep" data-step="1">
+              <i>1</i>
+              <div><b>简历与城市</b><span>上传简历，选意向城市</span></div>
+            </a>
+            <a class="step" data-action="gotoStep" data-step="2">
+              <i>2</i>
+              <div><b>岗位 JD</b><span>录入要对比的岗位</span></div>
+            </a>
+            <a class="step" data-action="gotoStep" data-step="3">
+              <i>3</i>
+              <div><b>公司与规则</b><span>投递上限、部门情报</span></div>
+            </a>
+            <a class="step" data-action="gotoStep" data-step="4">
+              <i>4</i>
+              <div><b>模型</b><span>选择接入的 LLM</span></div>
+            </a>
+            <a class="step" data-action="gotoStep" data-step="5">
+              <i>5</i>
+              <div><b>校准问答</b><span>补齐关键信息</span></div>
+            </a>
+          </nav>
+
+          <div class="rail-card">
+            <div class="rail-card-title">本次投递</div>
+            <ul class="mini-stats" id="miniStats"></ul>
+          </div>
+
+          <div class="rail-foot">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8 3 3.8v4.1c0 3 2.1 5.5 5 6.3 2.9-.8 5-3.3 5-6.3V3.8L8 1.8Z" stroke="currentColor" stroke-width="1.3"/></svg>
+            简历与 API Key 只存在本机<br />不会上传到任何服务器
+          </div>
+        </aside>
+
+        <main class="main" id="main">
+          <!-- ============ 配置视图 ============ -->
+          <section id="viewSetup">
+            <div class="page-head">
+              <div>
+                <h1>先把材料备齐，再让模型做判断</h1>
+                <p>简历、岗位、公司与情报越完整，岗位之间的差异才越能拉开。全流程在本机完成，只有分析请求会发送到你选择的模型服务。</p>
+              </div>
+              <div class="head-badge" id="readyBadge">准备度 0%</div>
+            </div>
+
+            <!-- STEP 1 -->
+            <section class="card step-card" id="step1" data-card="1">
+              <div class="card-head">
+                <div class="card-title"><span class="num">1</span><h2>简历与意向城市</h2></div>
+                <span class="card-sub">简历决定"你能投什么"，城市决定"哪些岗位值得投"</span>
+              </div>
+
+              <div class="step-body">
+                <div class="dropzone" id="resumeDrop" data-action="pickResume">
+                  <input type="file" id="resumeInput" accept=".pdf,.docx,.md,.markdown,.txt,.png,.jpg,.jpeg,.webp" hidden />
+                  <div class="dz-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V5m0 0L8 9m4-4 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 15v2.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                  </div>
+                  <div class="dz-text">
+                    <b>点击或拖拽上传简历</b>
+                    <span>PDF / Word(.docx) / Markdown / TXT / 图片（jpg、png，可用截图）</span>
+                  </div>
+                </div>
+
+                <div id="resumePreview" class="resume-preview" hidden></div>
+
+                <div class="field-grid">
+                  <div class="field span2">
+                    <label>意向城市 <span class="req">*</span><em>可多选，分析时会按城市判断岗位分布与薪资</em></label>
+                    <div class="chips" id="cityChips"></div>
+                    <div class="inline-add">
+                      <input id="cityCustom" placeholder="其他城市，回车添加" />
+                      <button class="btn ghost sm" data-action="addCity">添加</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>期望薪资（可选）<em>如 25K×15 / 年包 40W</em></label>
+                    <input id="salaryExpect" placeholder="例：月薪 25K 以上，年包不低于 35W" />
+                  </div>
+                  <div class="field">
+                    <label>毕业时间 / 身份（可选）<em>影响应届身份与投递批次判断</em></label>
+                    <input id="gradInfo" placeholder="例：2027 届本科，2027 年 6 月毕业" />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- STEP 2 -->
+            <section class="card step-card" id="step2" data-card="2">
+              <div class="card-head">
+                <div class="card-title"><span class="num">2</span><h2>岗位 JD</h2></div>
+                <span class="card-sub">同一家公司、同一个方向的不同岗位，逐个加进来</span>
+              </div>
+
+              <div class="step-body">
+                <div class="add-tools">
+                  <button class="tool-btn" data-action="togglePaste">
+                    <svg viewBox="0 0 24 24" fill="none"><rect x="4.5" y="4.5" width="15" height="15" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 9.5h7M8.5 13h7M8.5 16.5h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <b>粘贴纯文字</b><span>直接复制 JD 正文</span>
+                  </button>
+                  <button class="tool-btn" data-action="pickJDFiles">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V6m0 0L8.5 9.5M12 6l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 15.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                    <b>上传文件</b><span>PDF / Word / MD / 图片</span>
+                  </button>
+                  <button class="tool-btn" data-action="grabTab">
+                    <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17" stroke="currentColor" stroke-width="1.6"/><circle cx="6.6" cy="7" r=".9" fill="currentColor"/></svg>
+                    <b>抓取当前标签页</b><span>在官网 JD 页面点这里</span>
+                  </button>
+                  <input type="file" id="jdInput" multiple accept=".pdf,.docx,.md,.markdown,.txt,.png,.jpg,.jpeg,.webp" hidden />
+                </div>
+
+                <div class="paste-panel" id="pastePanel" hidden>
+                  <div class="paste-grid">
+                    <div class="field"><label>岗位名称</label><input id="jdTitle" placeholder="例：推荐算法工程师（校招）" /></div>
+                    <div class="field"><label>部门 / 团队（可选）</label><input id="jdDept" placeholder="例：商业化推荐组" /></div>
+                    <div class="field"><label>工作城市（可选）</label><input id="jdCity" placeholder="例：北京 / 上海" /></div>
+                    <div class="field"><label>JD 链接（可选）</label><input id="jdUrl" placeholder="https://..." /></div>
+                  </div>
+                  <div class="field">
+                    <label>JD 正文 <span class="req">*</span><em>岗位职责 + 任职要求</em></label>
+                    <textarea id="jdText" rows="7" placeholder="把岗位职责、任职要求、加分项整段贴进来…"></textarea>
+                  </div>
+                  <div class="row-end">
+                    <button class="btn ghost sm" data-action="togglePaste">取消</button>
+                    <button class="btn primary sm" data-action="savePaste">加入对比</button>
+                  </div>
+                </div>
+
+                <div class="jd-list" id="jdList"></div>
+                <div class="jd-empty" id="jdEmpty">
+                  <p>还没有岗位。建议一次放 2–5 个同方向的岗位，对比才有意义。</p>
+                </div>
+              </div>
+            </section>
+
+            <!-- STEP 3 -->
+            <section class="card step-card" id="step3" data-card="3">
+              <div class="card-head">
+                <div class="card-title"><span class="num">3</span><h2>公司与投递规则</h2></div>
+                <span class="card-sub">投递数量上限直接决定"选哪几个"，别浪费名额</span>
+              </div>
+
+              <div class="step-body">
+                <div class="field-grid">
+                  <div class="field">
+                    <label>公司名称 <span class="req">*</span></label>
+                    <input id="companyName" placeholder="例：字节跳动" />
+                  </div>
+                  <div class="field">
+                    <label>本次可投递岗位数上限 <span class="req">*</span></label>
+                    <div class="limit-row">
+                      <input id="companyLimit" type="number" min="1" max="20" value="3" />
+                      <div class="quick-limits">
+                        <button class="chip-btn" data-action="setLimit" data-val="1">1</button>
+                        <button class="chip-btn" data-action="setLimit" data-val="2">2</button>
+                        <button class="chip-btn" data-action="setLimit" data-val="3">3</button>
+                        <button class="chip-btn" data-action="setLimit" data-val="5">5</button>
+                        <button class="chip-btn" data-action="setLimit" data-val="10">不限/多</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field span2">
+                    <label>招聘官网 <em>填写后可以抓取官网页面，自动识别投递规则与岗位信息</em></label>
+                    <div class="inline-add">
+                      <input id="companySite" placeholder="https://jobs.xxx.com/campus" />
+                      <button class="btn ghost sm" data-action="fetchSite">抓取官网</button>
+                    </div>
+                    <div class="hint-line" id="siteHint"></div>
+                  </div>
+                </div>
+
+                <div class="intel-grid">
+                  <div class="field">
+                    <label>部门 / 公司情报 <em>氛围、福利、加班、是否裁员、团队规模、汇报关系…</em></label>
+                    <textarea id="companyIntel" rows="5" placeholder="例：该部门今年从 40 人扩到 70 人，主要做海外增长；脉脉上反馈加班偏多，去年有过一次组织调整…"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>薪资情报 <em>有就填，没有则模型按市场估算并标注置信度</em></label>
+                    <textarea id="salaryIntel" rows="5" placeholder="例：offershow 上 2026 届该岗位 23–28K × 15，北京；上海低 1–2K"></textarea>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>其他补充 <em>毕业时间、能否提前实习、是否有 return offer、家庭/落户限制等</em></label>
+                  <textarea id="companyExtra" rows="2" placeholder="例：可以 2027 年 3 月提前实习，优先考虑有转正机会的岗位"></textarea>
+                </div>
+
+                <div class="note-strip">
+                  <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v3.6M8 5.2v.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                  投递上限以公司校招官网为准（常见为 1–3 个志愿）。插件会从官网页面尝试识别，识别不到时请手动填写；未填写情报时，模型会标注"未知/估算"，不会编造。
+                </div>
+              </div>
+            </section>
+
+            <!-- STEP 4 -->
+            <section class="card step-card" id="step4" data-card="4">
+              <div class="card-head">
+                <div class="card-title"><span class="num">4</span><h2>接入模型</h2></div>
+                <span class="card-sub">用你自己的 API Key，选择分析用的 LLM</span>
+              </div>
+
+              <div class="step-body">
+                <div class="field-grid">
+                  <div class="field">
+                    <label>服务商</label>
+                    <select id="provider"></select>
+                  </div>
+                  <div class="field">
+                    <label>模型</label>
+                    <div class="model-row">
+                      <select id="modelSelect"></select>
+                      <input id="modelCustom" placeholder="或直接填写模型 ID" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>BaseURL</label>
+                    <input id="baseURL" placeholder="https://api.deepseek.com/v1" />
+                  </div>
+                  <div class="field">
+                    <label>API Key</label>
+                    <div class="inline-add">
+                      <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+                      <button class="btn ghost sm" data-action="toggleKey">显示</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>视觉模型（可选）<em>简历/JD 是图片时使用；留空则用上面的模型</em></label>
+                    <input id="visionModel" placeholder="例：gpt-4o / glm-4v-plus / qwen-vl-max" />
+                  </div>
+                  <div class="field">
+                    <label>温度 <em>越低越稳定，建议 0.2–0.4</em></label>
+                    <div class="range-row">
+                      <input id="temperature" type="range" min="0" max="1" step="0.05" />
+                      <span id="tempVal">0.30</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="provider-hint" id="providerHint"></div>
+
+                <div class="model-actions">
+                  <button class="btn ghost sm" data-action="testModel">测试连接</button>
+                  <span class="test-result" id="testResult"></span>
+                </div>
+              </div>
+            </section>
+
+            <!-- STEP 5 -->
+            <section class="card step-card" id="step5" data-card="5">
+              <div class="card-head">
+                <div class="card-title"><span class="num">5</span><h2>分析前校准问答</h2></div>
+                <span class="card-sub">补齐简历和 JD 里看不出来的关键信息，排序会准很多</span>
+              </div>
+
+              <div class="step-body">
+                <div class="qa-head">
+                  <div>
+                    <b>让模型先问你几个问题</b>
+                    <p>例如城市能否妥协、是否接受非核心业务、薪资底线、能否提前实习——这些往往比技术栈更能改变结论。</p>
+                  </div>
+                  <button class="btn ghost sm" data-action="genQuestions" id="genQBtn">生成问题</button>
+                </div>
+                <div id="qaList" class="qa-list"></div>
+              </div>
+            </section>
+
+            <div class="foot-note">
+              分析会把你填写的材料发送到所选的模型服务商，请自行确认其数据政策；本插件不做任何中转与留存。
+            </div>
+          </section>
+
+          <!-- ============ 结果视图 ============ -->
+          <section id="viewResult" hidden>
+            <div id="resultRoot"></div>
+          </section>
+        </main>
+      </div>
+
+      <footer class="actionbar" id="actionBar">
+        <div class="action-status" id="actionStatus"></div>
+        <div class="action-btns">
+          <button class="btn ghost" data-action="resetAll" id="resetBtn">清空</button>
+          <button class="btn primary lg" data-action="startAnalysis" id="startBtn">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M7.5 5.5 13 10l-5.5 4.5v-9Z" fill="currentColor"/></svg>
+            开始分析
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast-wrap"></div>
+    <div id="modalRoot"></div>
+    <div id="progressOverlay" class="progress-overlay" hidden>
+      <div class="progress-card">
+        <div class="spinner"></div>
+        <h3 id="progressTitle">正在分析…</h3>
+        <p id="progressDesc">模型正在阅读简历与岗位 JD</p>
+        <div class="progress-bar"><i id="progressBar"></i></div>
+        <div class="progress-meta" id="progressMeta"></div>
+        <button class="btn ghost sm" data-action="cancelAnalysis" id="cancelBtn">取消</button>
+      </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
