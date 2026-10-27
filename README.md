@@ -4,6 +4,11 @@
 
 它把简历、多个岗位 JD、意向城市、投递上限、部门/薪资情报一起交给**你自己选择的 LLM**，输出逐岗评分、证据对照、缺口补法、简历改写建议和投递组合（冲/稳/保）。
 
+[![GitHub stars](https://img.shields.io/github/stars/lshannie-dotcom/job-match-ext?style=social)](https://github.com/lshannie-dotcom/job-match-ext/stargazers)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-blue)](https://developer.chrome.com/docs/extensions/mv3)
+[![Last commit](https://img.shields.io/github/last-commit/lshannie-dotcom/job-match-ext)](https://github.com/lshannie-dotcom/job-match-ext/commits/main)
+
 ![配置页](docs/setup.png)
 
 ## 能做什么
@@ -136,3 +141,41 @@ cd job-match-ext && python3 -m http.server 8777
 ```
 
 预览模式下 `chrome.storage` 会降级为 `localStorage`，「抓取当前标签页」不可用；**模型接口也调不通**——网页环境受浏览器 CORS 限制，会被拦在预检阶段。要看真实效果，请按上面的步骤把扩展装进 Chrome，从工具栏图标打开。
+
+## ⭐ 反馈与共建
+
+如果这个工具帮到了你，欢迎：
+
+- 去仓库点个 **Star**，让更多秋招同学看到
+- 在 [Issues](https://github.com/lshannie-dotcom/job-match-ext/issues) 里提 Bug 或功能建议
+- 在 [Discussions](https://github.com/lshannie-dotcom/job-match-ext/discussions) 里聊聊你的使用场景
+- 提 Pull Request 一起完善（见仓库里的 PR 模板）
+
+---
+
+## English
+
+**Toudi Canmou · Job-Match Compare** — a Chrome extension for campus recruiting (秋招).
+
+During campus recruiting, one company often opens 3–5 similar roles in the same direction, but you can only apply to 1–3 of them. This extension answers one question: **given my résumé, which of these roles should I apply to, and in what order?**
+
+It gathers your résumé, multiple job descriptions (JD), target cities, the application limit, and any company/team intel you have, then sends everything to **the LLM you choose** and returns per-role scoring, evidence, gap analysis, résumé rewrite suggestions, and an application plan (reach / match / safety).
+
+### Highlights
+
+- **Inputs**: résumé from PDF (with Chinese CMap), `.docx`, Markdown, TXT, or images (jpg/png → vision model); JD via paste, file upload, or one-click "capture current tab".
+- **Application limit**: auto-detected from the company's careers site ("最多可投递 N 个岗位").
+- **Models**: OpenAI / Anthropic / Gemini protocols with presets for DeepSeek, Zhipu GLM, Qwen, Moonshot, Doubao, Claude, Gemini, local Ollama, or any OpenAI-compatible endpoint.
+- **Calibration Q&A**: the model asks 4–6 questions that actually change the ranking before scoring.
+- **Scoring**: match score (skill 35% / experience 30% / project 20% /硬性门槛 15%) + quality score (prospect 40% / team 30% / salary 20% / city 10%); hard-requirement failures cap the overall score at 55.
+- **Privacy**: résumé, JD, and API keys stay in `chrome.storage.local`; no backend, no relay. Content is only sent to the model provider you pick when you click "分析".
+
+### Install
+
+1. Open `chrome://extensions/`, enable **Developer mode**.
+2. Click **Load unpacked** and select this `job-match-ext` folder.
+3. Click the purple toolbar icon to open the workbench.
+
+> Note: `api.openai.com` and `api.anthropic.com` are not directly reachable from mainland China networks (DNS pollution). Use a domestic provider (Zhipu GLM-4-Flash is free) or a proxy. See the 国内网络 section above.
+
+Feedback and contributions welcome via [Issues](https://github.com/lshannie-dotcom/job-match-ext/issues) and [Discussions](https://github.com/lshannie-dotcom/job-match-ext/discussions).
